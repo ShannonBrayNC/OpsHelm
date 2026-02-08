@@ -1,0 +1,252 @@
+title,body,labels,assignees,milestone
+"EPIC: OpsHelm Phase 1 — Email-Native Ops Command Center","## Epic Goal
+Deliver a working Phase 1 OpsHelm system that replaces manual inbox triage with a trusted daily operational cockpit, governed by explicit contracts and workspace isolation.
+
+## Success Criteria
+- Inbox coverage visible
+- No missed tickets when email is source of truth
+- Daily Runway generated from real data
+- Parex and ParkPlace data fully isolated
+- No breaking changes land without approval artifacts
+
+## Included Issues
+Ingestion: #2 #3 #4 #5
+Store: #6 #7 #8
+Portal: #9 #10 #11
+Agents: #12 #13
+Governance: #14 #15","epic,phase-1","", "Phase 1"
+"Ingestion: Implement loadWorkspaceConfig() with Whiteglove isolation","## Goal
+Resolve workspace-specific configuration for ingestion and portal without inference.
+
+## Scope
+- Implement `loadWorkspaceConfig(workspaceId)`
+- Support: mailbox identity, allowed folders, ticket source patterns, branding identity
+- Fail-fast on invalid workspaceId
+
+## Contracts
+- ctr-0001 loadWorkspaceConfig
+
+## Acceptance Criteria
+- Unknown workspaceId throws explicit error
+- No implicit workspace inference
+- Unit tests cover valid + invalid workspace
+
+## Do Not Break
+- Workspace isolation invariant
+- No hard-coded ticket patterns","phase-1,ingestion,contracts","", "Phase 1"
+"Ingestion: Implement deterministic runIngestion() runner","## Goal
+Create the deterministic orchestration function for Phase 1 ingestion.
+
+## Scope
+- Implement `runIngestion(workspaceId, options?)`
+- Wire step sequence (config → graph → classify → extract → normalize → store)
+- Return `IngestionSummary`
+
+## Contracts
+- ctr-0002 runIngestion
+
+## Acceptance Criteria
+- Idempotent for same window
+- Never silently drops messages
+- Writes ProcessingState on success
+
+## Do Not Break
+- Idempotency guarantee
+- No cross-workspace writes","phase-1,ingestion,store,contracts","", "Phase 1"
+"Ingestion: Implement classifyEmailEvent() with confidence","## Goal
+Classify emails into operational categories with explainability.
+
+## Scope
+- Implement `classifyEmailEvent(message, workspaceConfig)`
+- Categories: Ticket, Meeting, SentSummary, Internal, Noise, Other
+- Include confidence + feature notes
+
+## Contracts
+- ctr-0003 classifyEmailEvent
+
+## Acceptance Criteria
+- Always returns a category
+- Confidence score included
+- Low confidence routed to exceptions
+
+## Do Not Break
+- Deterministic output for same input
+- No LLM-only opaque classification without features","phase-1,ingestion,ai,contracts","", "Phase 1"
+"Ingestion: Implement extractTicketId() using workspace ticket sources","## Goal
+Reliably extract ConnectWise and ServiceNow ticket IDs without hardcoding.
+
+## Scope
+- Implement `extractTicketId(subject, bodyText, ticketSources)`
+- Support ConnectWise numeric and ServiceNow INC/REQ/RITM/CHG/TASK
+- Confidence scoring required
+
+## Contracts
+- ctr-0004 extractTicketId
+
+## Acceptance Criteria
+- Patterns come only from config
+- Multiple sources supported
+- Returns confidence + source
+
+## Do Not Break
+- No hard-coded regex patterns
+- No single-source assumptions","phase-1,ingestion,parsing,contracts","", "Phase 1"
+"Store: Implement upsertEmailEvent()","## Goal
+Persist all email events reliably and idempotently.
+
+## Scope
+- Implement `upsertEmailEvent(workspaceId, emailEvent)`
+- Idempotent by messageId
+
+## Contracts
+- ctr-0005 upsertEmailEvent
+
+## Acceptance Criteria
+- Duplicate runs do not duplicate rows
+- workspaceId enforced on every write
+
+## Do Not Break
+- Never discard email events
+- Never infer workspaceId","phase-1,store,contracts","", "Phase 1"
+"Store: Implement upsertTicket() with status + evidence preservation","## Goal
+Maintain ticket state over time using email signals.
+
+## Scope
+- Implement `upsertTicket(workspaceId, ticketId, patch)`
+- Preserve evidence pointers + history fields unless explicitly overwritten
+
+## Contracts
+- ctr-0006 upsertTicket
+
+## Acceptance Criteria
+- Tickets keyed by (workspaceId, ticketId)
+- Status bucket updates correctly
+- Risk flags retained
+
+## Do Not Break
+- Cross-workspace updates
+- Evidence loss","phase-1,store,tickets,contracts","", "Phase 1"
+"Store: Implement recordException() for Inbox Intelligence","## Goal
+Ensure low-confidence or failed parses are first-class citizens.
+
+## Scope
+- Implement `recordException(workspaceId, emailEventId, reasonCode, details?)`
+
+## Contracts
+- ctr-0007 recordException
+
+## Acceptance Criteria
+- Every exception persisted
+- Visible to Portal
+- Linked to EmailEvent
+
+## Do Not Break
+- Silent failures
+- Dropping unclassified messages","phase-1,store,exceptions,contracts","", "Phase 1"
+"Portal: Implement Workspace Switch with identity guardrail","## Goal
+Make workspace identity explicit and unavoidable.
+
+## Scope
+- Workspace selector
+- Guardrail banner showing workspace + identity (Parex / ParkPlace)
+
+## Acceptance Criteria
+- User always knows active workspace
+- Switching workspace reloads data
+
+## Do Not Break
+- Implicit workspace context
+- Mixed data views","phase-1,portal,whiteglove","", "Phase 1"
+"Portal: Implement Inbox Intelligence (coverage + exceptions)","## Goal
+Make inbox processing transparent and trustworthy.
+
+## Scope
+- Coverage meter
+- Exceptions list
+- Last ingestion timestamp
+
+## Acceptance Criteria
+- Coverage % displayed
+- Exceptions drill-down works
+
+## Do Not Break
+- Hidden failures
+- Silent drops","phase-1,portal,exceptions","", "Phase 1"
+"Portal: Implement Ticket Triage Board with status buckets","## Goal
+Visualize operational workload clearly.
+
+## Scope
+- Buckets: New | Waiting on Customer | Waiting on Me | In Progress | Risk
+- Ticket cards: ID, priority/severity, last touch age, next action
+
+## Acceptance Criteria
+- Accurate bucket placement
+- Drill-in supported
+
+## Do Not Break
+- Cross-workspace ticket mixing","phase-1,portal,tickets","", "Phase 1"
+"Agent: Implement generateRunway() (Today’s Runway)","## Goal
+Produce a daily execution plan with receipts.
+
+## Scope
+- Implement `generateRunway(workspaceId, date, mode?)`
+- Derive tasks from tickets/promises/stale items/meetings
+
+## Contracts
+- ctr-0008 generateRunway
+
+## Acceptance Criteria
+- Every task includes evidence links
+- Artifact stored
+
+## Do Not Break
+- Auto-send behavior
+- Evidence-less tasks","phase-1,agents,ai,contracts","", "Phase 1"
+"Agent: Implement minePromises() from Sent Items","## Goal
+Never forget a commitment again.
+
+## Scope
+- Implement `minePromises(workspaceId, window)`
+- Store Commitment entities with evidenceEmailId
+
+## Contracts
+- ctr-0010 minePromises
+
+## Acceptance Criteria
+- Promises extracted with due dates
+- No auto-reminders sent
+
+## Do Not Break
+- Evidence loss
+- Implicit commitments","phase-1,agents,ai,contracts","", "Phase 1"
+"Governance: Implement extract_contracts.py (POC)","## Goal
+Enable manual contract diffing in Phase 1.
+
+## Scope
+- Parse repo for exported functions
+- Emit deterministic JSON
+
+## Contracts
+- ctr-0011 extract_contracts.py
+
+## Acceptance Criteria
+- Same input → same output
+- Ignores node_modules
+- Read-only
+
+## Do Not Break
+- Non-deterministic output","phase-1,governance,contracts","", "Phase 1"
+"Governance: Add PR template and enforce contract impact declaration","## Goal
+Force explicit thinking about change impact.
+
+## Scope
+- Add `.github/PULL_REQUEST_TEMPLATE.md`
+- Require contract impact selection
+- Link to governance docs
+
+## Acceptance Criteria
+- PRs cannot ignore contract impact
+- Docs discoverable
+
+## Do Not Break
+- Silent breaking changes","phase-1,governance,process","", "Phase 1"
