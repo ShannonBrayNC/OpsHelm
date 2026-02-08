@@ -1,0 +1,414 @@
+{
+  "registryVersion": "0.1.0",
+  "updatedAt": "2026-02-08T23:59:00-05:00",
+  "repo": "OpsHelm",
+  "contracts": [
+    {
+      "id": "ctr-0001",
+      "symbol": {
+        "name": "loadWorkspaceConfig",
+        "modulePath": "services/ingestion/workspace.ts",
+        "namespace": "ingestion",
+        "exported": true
+      },
+      "language": "typescript",
+      "signature": {
+        "params": [
+          { "name": "workspaceId", "type": "string", "required": true, "description": "Workspace identifier (e.g., parex, parkplace)" }
+        ],
+        "returns": { "type": "WorkspaceConfig", "description": "Resolved workspace configuration used by ingestion and portal." },
+        "throws": [
+          "WorkspaceNotFound",
+          "InvalidWorkspaceConfig"
+        ],
+        "sideEffects": [
+          "reads config files"
+        ]
+      },
+      "doc": {
+        "summary": "Resolves workspace configuration (mailbox, folders, ticket patterns, branding).",
+        "contract": "Must fail-fast if workspaceId is unknown. Must not infer workspace implicitly.",
+        "examples": [
+          "cfg = loadWorkspaceConfig('parex')"
+        ]
+      },
+      "stability": "stable",
+      "owners": ["PM", "Ingestion"],
+      "consumers": [
+        { "symbol": "runIngestion", "modulePath": "services/ingestion/runIngestion.ts", "kind": "job" },
+        { "symbol": "TopBar", "modulePath": "apps/portal/src/ui/TopBar.jsx", "kind": "ui" }
+      ],
+      "tests": [
+        { "path": "services/ingestion/__tests__/workspace.test.ts", "kind": "unit" }
+      ],
+      "tags": ["workspace", "whiteglove", "config"]
+    },
+
+    {
+      "id": "ctr-0002",
+      "symbol": {
+        "name": "runIngestion",
+        "modulePath": "services/ingestion/runIngestion.ts",
+        "namespace": "ingestion",
+        "exported": true
+      },
+      "language": "typescript",
+      "signature": {
+        "params": [
+          { "name": "workspaceId", "type": "string", "required": true },
+          { "name": "options", "type": "IngestionOptions", "required": false, "default": null, "description": "Overrides for backfill, limits, and windows." }
+        ],
+        "returns": { "type": "IngestionSummary", "description": "Counts, exceptions summary, and new checkpoint data." },
+        "throws": ["GraphAuthError", "GraphQueryError", "StoreWriteError"],
+        "sideEffects": [
+          "reads Microsoft Graph",
+          "writes Ops Store",
+          "updates ProcessingState"
+        ]
+      },
+      "doc": {
+        "summary": "Deterministic ingestion runner for mail + calendar.",
+        "contract": "Must be idempotent for the same window. Must never silently drop messages. Must route low-confidence items to exceptions.",
+        "examples": [
+          "summary = await runIngestion('parex', { backfillDays: 2 })"
+        ]
+      },
+      "stability": "stable",
+      "owners": ["PM", "Ingestion"],
+      "consumers": [
+        { "symbol": "IngestionCLI", "modulePath": "services/ingestion/cli.ts", "kind": "job" }
+      ],
+      "tests": [
+        { "path": "services/ingestion/__tests__/runIngestion.test.ts", "kind": "integration" }
+      ],
+      "tags": ["ingestion", "graph", "idempotency"]
+    },
+
+    {
+      "id": "ctr-0003",
+      "symbol": {
+        "name": "classifyEmailEvent",
+        "modulePath": "services/ingestion/classify.ts",
+        "namespace": "ingestion",
+        "exported": true
+      },
+      "language": "typescript",
+      "signature": {
+        "params": [
+          { "name": "message", "type": "GraphMessage", "required": true },
+          { "name": "workspaceConfig", "type": "WorkspaceConfig", "required": true }
+        ],
+        "returns": { "type": "ClassificationResult", "description": "category + confidence + features used." },
+        "throws": [],
+        "sideEffects": []
+      },
+      "doc": {
+        "summary": "Classifies an email into Ticket/Meeting/SentSummary/Internal/Noise/Other.",
+        "contract": "Must always return a category. Must include confidence and feature notes.",
+        "examples": [
+          "res = classifyEmailEvent(msg, cfg)"
+        ]
+      },
+      "stability": "experimental",
+      "owners": ["Ingestion"],
+      "consumers": [
+        { "symbol": "runIngestion", "modulePath": "services/ingestion/runIngestion.ts", "kind": "job" }
+      ],
+      "tests": [
+        { "path": "services/ingestion/__tests__/classify.test.ts", "kind": "unit" }
+      ],
+      "tags": ["classification", "confidence"]
+    },
+
+    {
+      "id": "ctr-0004",
+      "symbol": {
+        "name": "extractTicketId",
+        "modulePath": "services/ingestion/extractors/ticketId.ts",
+        "namespace": "ingestion.extractors",
+        "exported": true
+      },
+      "language": "typescript",
+      "signature": {
+        "params": [
+          { "name": "subject", "type": "string", "required": true },
+          { "name": "bodyText", "type": "string", "required": false, "default": "", "description": "Plain text body when available." },
+          { "name": "ticketSources", "type": "TicketSourceConfig[]", "required": true }
+        ],
+        "returns": { "type": "TicketIdResult", "description": "ticketId + source + confidence" },
+        "throws": [],
+        "sideEffects": []
+      },
+      "doc": {
+        "summary": "Extracts ticket ID using workspace-configured ticket source patterns.",
+        "contract": "Must not hard-code ConnectWise/ServiceNow patterns; patterns come from config. Must return confidence.",
+        "examples": [
+          "idRes = extractTicketId(msg.subject, msg.bodyText, cfg.ticketSources)"
+        ]
+      },
+      "stability": "stable",
+      "owners": ["Ingestion"],
+      "consumers": [
+        { "symbol": "runIngestion", "modulePath": "services/ingestion/runIngestion.ts", "kind": "job" }
+      ],
+      "tests": [
+        { "path": "services/ingestion/__tests__/ticketId.test.ts", "kind": "unit" }
+      ],
+      "tags": ["connectwise", "servicenow", "regex"]
+    },
+
+    {
+      "id": "ctr-0005",
+      "symbol": {
+        "name": "upsertEmailEvent",
+        "modulePath": "services/ingestion/store/emailEventRepo.ts",
+        "namespace": "store",
+        "exported": true
+      },
+      "language": "typescript",
+      "signature": {
+        "params": [
+          { "name": "workspaceId", "type": "string", "required": true },
+          { "name": "emailEvent", "type": "EmailEvent", "required": true }
+        ],
+        "returns": { "type": "EmailEvent", "description": "Stored EmailEvent (idempotent by messageId)." },
+        "throws": ["StoreWriteError"],
+        "sideEffects": ["writes Ops Store"]
+      },
+      "doc": {
+        "summary": "Writes EmailEvent (idempotent).",
+        "contract": "Must be idempotent by messageId. Must enforce workspaceId.",
+        "examples": ["await upsertEmailEvent('parex', ev)"]
+      },
+      "stability": "stable",
+      "owners": ["Ingestion", "Store"],
+      "consumers": [
+        { "symbol": "runIngestion", "modulePath": "services/ingestion/runIngestion.ts", "kind": "job" }
+      ],
+      "tests": [
+        { "path": "services/ingestion/__tests__/emailEventRepo.test.ts", "kind": "integration" }
+      ],
+      "tags": ["store", "idempotency", "workspace"]
+    },
+
+    {
+      "id": "ctr-0006",
+      "symbol": {
+        "name": "upsertTicket",
+        "modulePath": "services/ingestion/store/ticketRepo.ts",
+        "namespace": "store",
+        "exported": true
+      },
+      "language": "typescript",
+      "signature": {
+        "params": [
+          { "name": "workspaceId", "type": "string", "required": true },
+          { "name": "ticketId", "type": "string", "required": true },
+          { "name": "patch", "type": "Partial<Ticket>", "required": true }
+        ],
+        "returns": { "type": "Ticket", "description": "Stored ticket record." },
+        "throws": ["StoreWriteError"],
+        "sideEffects": ["writes Ops Store"]
+      },
+      "doc": {
+        "summary": "Upserts a ticket record by (workspaceId, ticketId).",
+        "contract": "Must not allow cross-workspace updates. Must preserve evidence pointers and history fields unless explicitly overwritten.",
+        "examples": [
+          "await upsertTicket('parex', '#162518', { statusBucket: 'In Progress' })"
+        ]
+      },
+      "stability": "stable",
+      "owners": ["Store"],
+      "consumers": [
+        { "symbol": "runIngestion", "modulePath": "services/ingestion/runIngestion.ts", "kind": "job" },
+        { "symbol": "generateCustomerBrief", "modulePath": "services/agents/content/customerBrief.ts", "kind": "agent" }
+      ],
+      "tests": [
+        { "path": "services/ingestion/__tests__/ticketRepo.test.ts", "kind": "integration" }
+      ],
+      "tags": ["tickets", "store", "workspace"]
+    },
+
+    {
+      "id": "ctr-0007",
+      "symbol": {
+        "name": "recordException",
+        "modulePath": "services/ingestion/store/exceptionsRepo.ts",
+        "namespace": "store",
+        "exported": true
+      },
+      "language": "typescript",
+      "signature": {
+        "params": [
+          { "name": "workspaceId", "type": "string", "required": true },
+          { "name": "emailEventId", "type": "string", "required": true },
+          { "name": "reasonCode", "type": "string", "required": true },
+          { "name": "details", "type": "object", "required": false, "default": null }
+        ],
+        "returns": { "type": "ExceptionRecord" },
+        "throws": ["StoreWriteError"],
+        "sideEffects": ["writes Ops Store"]
+      },
+      "doc": {
+        "summary": "Records ingestion exceptions for review in Inbox Intel.",
+        "contract": "Must never discard; exceptions are first-class. Must enforce workspaceId.",
+        "examples": [
+          "await recordException('parex', ev.id, 'MISSING_TICKET_ID', { subject: ev.subject })"
+        ]
+      },
+      "stability": "stable",
+      "owners": ["Store", "Ingestion"],
+      "consumers": [
+        { "symbol": "runIngestion", "modulePath": "services/ingestion/runIngestion.ts", "kind": "job" }
+      ],
+      "tests": [
+        { "path": "services/ingestion/__tests__/exceptionsRepo.test.ts", "kind": "integration" }
+      ],
+      "tags": ["exceptions", "coverage"]
+    },
+
+    {
+      "id": "ctr-0008",
+      "symbol": {
+        "name": "generateRunway",
+        "modulePath": "services/agents/content/runway.ts",
+        "namespace": "agents.content",
+        "exported": true
+      },
+      "language": "typescript",
+      "signature": {
+        "params": [
+          { "name": "workspaceId", "type": "string", "required": true },
+          { "name": "date", "type": "string", "required": true, "description": "ISO date (YYYY-MM-DD) in workspace timezone." },
+          { "name": "mode", "type": "RunwayMode", "required": false, "default": "default" }
+        ],
+        "returns": { "type": "Artifact", "description": "Runway artifact with tasks and evidence links." },
+        "throws": ["StoreReadError", "AIProviderError"],
+        "sideEffects": ["reads Ops Store", "writes Artifact"]
+      },
+      "doc": {
+        "summary": "Generates the daily execution plan (“Today’s Runway”).",
+        "contract": "Every runway item must include evidence links (email/ticket). No auto-send. No cross-workspace reads.",
+        "examples": [
+          "await generateRunway('parex', '2026-02-09', 'default')"
+        ]
+      },
+      "stability": "stable",
+      "owners": ["Agents"],
+      "consumers": [
+        { "symbol": "CommandCenter", "modulePath": "apps/portal/src/pages/CommandCenter.jsx", "kind": "ui" }
+      ],
+      "tests": [
+        { "path": "services/agents/__tests__/runway.test.ts", "kind": "contract" }
+      ],
+      "tags": ["runway", "daily", "evidence"]
+    },
+
+    {
+      "id": "ctr-0009",
+      "symbol": {
+        "name": "generateCustomerBrief",
+        "modulePath": "services/agents/content/customerBrief.ts",
+        "namespace": "agents.content",
+        "exported": true
+      },
+      "language": "typescript",
+      "signature": {
+        "params": [
+          { "name": "workspaceId", "type": "string", "required": true },
+          { "name": "customerId", "type": "string", "required": true },
+          { "name": "scope", "type": "CustomerBriefScope", "required": true },
+          { "name": "mode", "type": "BriefMode", "required": true, "description": "InternalOps | Technical | Executive" }
+        ],
+        "returns": { "type": "Artifact", "description": "Branded daily brief with diff and ticket rollups." },
+        "throws": ["StoreReadError", "AIProviderError"],
+        "sideEffects": ["reads Ops Store", "writes Artifact"]
+      },
+      "doc": {
+        "summary": "Generates customer queue daily brief (button push).",
+        "contract": "Must include diff since last brief (even if simplified). Must be branded by workspace identity + theme. Must link evidence.",
+        "examples": [
+          "await generateCustomerBrief('parex', 'UPS', { queue: 'MyQueue' }, 'Technical')"
+        ]
+      },
+      "stability": "stable",
+      "owners": ["Agents"],
+      "consumers": [
+        { "symbol": "CustomerBrief", "modulePath": "apps/portal/src/pages/CustomerBrief.jsx", "kind": "ui" }
+      ],
+      "tests": [
+        { "path": "services/agents/__tests__/customerBrief.test.ts", "kind": "contract" }
+      ],
+      "tags": ["briefs", "customer", "diff"]
+    },
+
+    {
+      "id": "ctr-0010",
+      "symbol": {
+        "name": "minePromises",
+        "modulePath": "services/agents/content/promiseMining.ts",
+        "namespace": "agents.content",
+        "exported": true
+      },
+      "language": "typescript",
+      "signature": {
+        "params": [
+          { "name": "workspaceId", "type": "string", "required": true },
+          { "name": "window", "type": "PromiseWindow", "required": true }
+        ],
+        "returns": { "type": "Commitment[]", "description": "Normalized commitments with evidence links." },
+        "throws": ["StoreReadError", "AIProviderError"],
+        "sideEffects": ["reads Ops Store", "writes Commitments"]
+      },
+      "doc": {
+        "summary": "Mines promises from Sent Items and replies.",
+        "contract": "Must store evidenceEmailId for each commitment. Must not auto-send reminders; reminders are surfaced for approval.",
+        "examples": [
+          "await minePromises('parex', { daysBack: 14 })"
+        ]
+      },
+      "stability": "stable",
+      "owners": ["Agents"],
+      "consumers": [
+        { "symbol": "PromiseTracker", "modulePath": "apps/portal/src/pages/PromiseTracker.jsx", "kind": "ui" }
+      ],
+      "tests": [
+        { "path": "services/agents/__tests__/promiseMining.test.ts", "kind": "contract" }
+      ],
+      "tags": ["promises", "commitments"]
+    },
+
+    {
+      "id": "ctr-0011",
+      "symbol": {
+        "name": "extract_contracts.py",
+        "modulePath": "services/agents/pm/tools/extract_contracts.py",
+        "namespace": "pm.tools",
+        "exported": true
+      },
+      "language": "python",
+      "signature": {
+        "params": [
+          { "name": "rootDir", "type": "str", "required": true, "description": "Repository root to scan." }
+        ],
+        "returns": { "type": "JSON", "description": "Extracted contract list for comparison." },
+        "throws": ["SystemExit"],
+        "sideEffects": ["reads files"]
+      },
+      "doc": {
+        "summary": "Extracts contracts from repo for governance comparisons (POC).",
+        "contract": "Output must be deterministic. Must ignore node_modules. Must not mutate repo.",
+        "examples": [
+          "python services/agents/pm/tools/extract_contracts.py ."
+        ]
+      },
+      "stability": "experimental",
+      "owners": ["PM"],
+      "consumers": [
+        { "symbol": "ContractGuardian", "modulePath": "services/agents/pm/prompts/ContractGuardian.md", "kind": "agent" }
+      ],
+      "tests": [],
+      "tags": ["governance", "contracts", "extractor"]
+    }
+  ]
+}
