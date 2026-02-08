@@ -1,0 +1,35 @@
+{
+  "name": "opshelm",
+  "version": "1.0.0",
+  "description": "Steering chaos into calm waters",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ShannonBrayNC/OpsHelm.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/ShannonBrayNC/OpsHelm/issues"
+  },
+  "homepage": "https://github.com/ShannonBrayNC/OpsHelm#readme",
+  "devDependencies": {
+    "@microsoft/microsoft-graph-types": "^2.43.1",
+    "@types/node": "^25.2.2",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.13.0",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "dotenv": "^17.2.4"
+  }
+}
