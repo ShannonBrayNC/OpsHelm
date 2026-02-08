@@ -33,5 +33,5 @@ export function getTimestamp(): string {
   const now = new Date();
   const isoString = now.toISOString().replace(/[:.]/g, '-');
   const parts = isoString.split('T');
-  return parts[0] || '';
+  return parts[0] ?? '';
 }

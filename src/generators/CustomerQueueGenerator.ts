@@ -65,7 +65,7 @@ export class CustomerQueueGenerator {
       if (!groups[customer]) {
         groups[customer] = [];
       }
-      groups[customer].push(ticket);
+      groups[customer]!.push(ticket);
     }
     
     return groups;
