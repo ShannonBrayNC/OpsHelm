@@ -1,280 +1,365 @@
-Technical requirements spec
-1.1 Product goal
+# OpsHelm — Technical Requirements
 
-Build an Email-Native Ops Console that ingests Outlook mail (Microsoft Graph), extracts ticket + meeting + task + promise signals, and produces:
+## 1. Purpose
 
-a daily runway (today’s tasks and priorities),
+OpsHelm is an **Email-Native Operations Console** designed to convert Outlook email, ticket notifications, and calendar events into actionable operational intelligence.
 
-customer queue daily briefs (button push, branded),
+The system ingests email via Microsoft Graph and produces:
 
-meeting prep briefs,
+- A daily execution plan (“Today’s Runway”)
+- Customer queue daily briefs (one-click, branded)
+- Meeting preparation briefs
+- Promise/commitment tracking with reminders and receipts
+- Quarterly and yearly accomplishment summaries (review-ready)
 
-promise tracking with reminders, and
+OpsHelm must support **Whiteglove partner delivery**, where identity, branding, and ticket sources are isolated by workspace.
 
-quarterly/year accomplishments (review-ready).
+---
 
-System must support Whiteglove workspaces so that Parex and ParkPlace (ServiceNow) remain strictly separated in email ingestion, branding, templates, and data storage.
+## 2. Core Design Principles
 
-1.2 Non-goals (for POC)
+- **Email is the system of record**
+- **Evidence first** (every summary links to source receipts)
+- **No silent automation** (drafts only, explicit approval required)
+- **Workspace isolation** (no cross-customer or cross-partner leakage)
+- **Contracts over vibes** (AI codegen must respect function contracts)
 
-No automatic sending of emails. The system generates drafts for approval.
+---
 
-No direct ServiceNow/ConnectWise API integration in POC (email parsing is source of truth).
+## 3. Definitions
 
-No full mobile app in POC (responsive web only).
+### 3.1 Workspace
 
-2) Core concepts
-2.1 Workspace
+A **Workspace** is a hard operational boundary that governs:
 
-A Workspace is a hard boundary that controls:
+- Mailbox identity and folders (e.g., Parex vs ParkPlace)
+- Ticket source patterns (ConnectWise vs ServiceNow via email)
+- Branding identity (From name, signature, disclaimers)
+- Allowed customer themes
+- Data isolation (partition key: `workspaceId`)
+- Output voice and export headers
 
-Mailbox source (Parex vs ParkPlace mailbox or identity context)
+**Acceptance Criteria**
+- No entity may be created, queried, or exported without a `workspaceId`
+- UI must clearly indicate the active workspace (guardrail banner)
 
-Allowed folders / rules
+---
 
-Ticket parsing patterns (ConnectWise vs ServiceNow)
+### 3.2 Theme (Customer Branding)
 
-Customer branding options and templates
+A **Theme** defines customer-specific branding:
 
-Output identity (From name, signature, disclaimers)
+- Logo (SVG/PNG)
+- Color palette (primary, secondary, accent, background, card, text)
+- Label aliases (e.g., *Ticket #* vs *Case*, *Priority* vs *Severity*)
+- Export footer and disclaimer blocks
+- Optional email tone/voice template
 
-Data partitioning key (workspaceId) and optional separate database
+**Acceptance Criteria**
+- All exports (HTML, Markdown, PDF, DOCX) use Workspace identity + Theme
+- Theme availability is filtered by workspace
 
-Acceptance: No data entity may be created/queried without a workspaceId.
+---
 
-2.2 Customer Theme (branding)
+### 3.3 Ticket Sources
 
-A Theme defines:
+A **TicketSource** is a configurable email extraction profile.
 
-Logo URL
+Required support:
+- **ConnectWise** numeric tickets (e.g., `#162518`)
+- **ServiceNow** identifiers:
+  - `INC#######`
+  - `REQ#######`
+  - `RITM#######`
+  - `CHG#######`
+  - `TASK#######`
 
-Colors (primary/secondary/accent/background/card/text)
+**Acceptance Criteria**
+- Ticket ID detection is configuration-driven, not hard-coded
+- Multiple ticket sources may coexist per workspace
 
-Label aliases (e.g., “Severity” vs “Priority”, “Case” vs “Ticket #”)
+---
 
-Footer/disclaimer text blocks for exports
+## 4. Core Data Entities (POC)
 
-Optional voice template for email drafts
+All derived entities must reference source evidence and include confidence metadata.
 
-Acceptance: Every export (HTML/PDF/DOCX) is branded from Theme + Workspace identity.
+### 4.1 EmailEvent
 
-2.3 Ticket Source
+- Message metadata (IDs, timestamps, sender/recipients)
+- Subject and snippet
+- Classification:
+  - Ticket, Meeting, SentSummary, Internal, Noise, Other
+- Extracted fields:
+  - Ticket ID, customer, priority, status, asks, promises, due dates
+- Confidence scores (classification and extraction)
+- Evidence links (message URL, attachments)
 
-A TicketSource is an extraction profile:
+---
 
-type: email_parser
+### 4.2 Ticket
 
-subject/body regex for ticket identifiers
-
-parsing rules for metadata and standard fields
-
-Acceptance: ConnectWise-style numeric tickets and ServiceNow-style IDs (INC/REQ/RITM/CHG/TASK) are supported via configurable patterns.
-
-3) Data model (minimum viable)
-
-Entities stored with evidence links and confidence scores:
-
-EmailEvent: message metadata + classification + extracted fields + confidence + evidence links
-
-Ticket: ticket state, last touches, next action, risk flags, evidence pointers
-
-Task: next actions derived from email/ticket/meeting
-
-Commitment: promises extracted from sent mail and/or replies
-
-MeetingPrep: meeting details + prep brief + open loops
-
-Artifact: scripts/reports/briefs produced + link + impact metrics
-
-Impact: hours saved estimates, risk reduced, outcomes
-
-Acceptance: Every derived object must reference at least one evidence email/event.
-
-4) Functional requirements
-4.1 Ingestion and classification
-
-Ingest from Outlook via Graph:
-
-Inbox + configured folders
-
-Sent Items (for promise mining and accomplishments)
-
-Calendar events (for meeting prep)
-
-Classify each EmailEvent:
-
-ConnectWise Ticket, ServiceNow Ticket, Meeting, SentSummary, Internal, Noise, Other
-
-Extract:
-
-ticket ID, customer, status/priority signals, asks, promises, due dates
-
-Track processing coverage:
-
-processed vs unprocessed
-
-exception queue (low-confidence classification, missing ticketId, parse failures)
-
-Acceptance:
-
-“Inbox Coverage Meter” and “Exceptions Queue” are present and functional.
-
-System never silently drops unparsed mail; it goes to Exceptions.
-
-4.2 Task generation (Today’s Runway)
-
-Generate a prioritized list of actions for the day:
-
-derived tasks from asks/promises/stale tickets/upcoming meetings
-
-each task has due, ETA estimate, and evidence links
-
-Provide “Focus Mode” view for execution.
-
-Acceptance: One-click “Generate runway” produces tasks with evidence links.
-
-4.3 Ticket triage board
-
-Board columns:
-
-New | Waiting on Customer | Waiting on Me | In Progress | Risk
-
-Ticket cards include:
-
-ID, customer, priority/severity, queue, last touch age, next action
-
-risk flags and reason
-
-Acceptance: Search, filter, and “Open” ticket drill-in work in POC.
-
-4.4 Customer Queue Daily Brief (button push)
-
-For a selected customer and queue scope:
-
-Produce daily summary for all open tickets in your queue:
-
-Top risks
-
-Stale tickets (configurable threshold)
-
-Waiting on customer vs waiting on you
-
-What changed since yesterday (diff section)
-
-Draft update emails (optional output)
+- Ticket ID, customer, queue
+- Status bucket:
+  - New
+  - Waiting on Customer
+  - Waiting on Me
+  - In Progress
+  - Risk
+- Priority/severity
+- Last customer and internal touch timestamps
+- Next action
+- Risk flags
+- Evidence references (emails, artifacts)
+
+---
+
+### 4.3 Task (Runway Item)
+
+- Title and next action
+- Due date and ETA estimate
+- Priority and status
+- Source reference (Email, Ticket, Meeting)
+- Evidence links
+
+---
+
+### 4.4 Commitment (Promise)
+
+- Recipient (“promised to”)
+- Promise text
+- Promised date and due date
+- Status:
+  - Open
+  - At Risk
+  - Done
+- Evidence email reference
+- Reminder/escalation metadata
+
+---
+
+### 4.5 MeetingPrep
+
+- Meeting ID, title, time, attendees
+- Open loops (tickets and promises)
+- Generated prep brief
+- Evidence references
+- Generated outputs:
+  - Agenda draft
+  - Update email draft
+  - Post-meeting recap template
+
+---
+
+### 4.6 Artifact and Impact
+
+**Artifact**
+- Type (Script, Report, Brief, Runbook, Dashboard, Other)
+- Title and creation date
+- Delivery targets
+- Related tickets
+- Link or file reference
+
+**Impact**
+- Estimated hours saved
+- Risk reduced or outcome achieved
+
+---
+
+## 5. Functional Requirements
+
+### 5.1 Ingestion (Microsoft Graph)
+
+The system must ingest:
+
+- Mail:
+  - Inbox
+  - Workspace-approved folders
+  - Sent Items (for promises and accomplishments)
+- Calendar events (for meeting prep)
+
+Processing requirements:
+- Classify all messages
+- Extract ticket IDs using workspace ticket sources
+- Extract asks and promises with due dates
+- Maintain processing coverage metrics
+- Route low-confidence items to an Exceptions queue
+
+**Acceptance Criteria**
+- Inbox Coverage Meter shows processed vs unprocessed
+- No message is silently dropped
+
+---
+
+### 5.2 Today’s Runway (Daily Execution Plan)
+
+- One-click generation of today’s prioritized tasks
+- Derived from:
+  - Ticket asks and promises
+  - Stale tickets
+  - Upcoming meetings
+  - Overdue commitments
+- Each item includes evidence links
+
+**Acceptance Criteria**
+- “Generate Runway” produces actionable items with receipts
+
+---
+
+### 5.3 Ticket Triage Board
+
+Buckets:
+- New
+- Waiting on Customer
+- Waiting on Me
+- In Progress
+- Risk
+
+Ticket cards display:
+- Ticket ID, customer, queue
+- Priority/severity
+- Last touch age
+- Next action
+- Risk flags with reasons
+
+**Acceptance Criteria**
+- Board supports search and drill-in
+- Data is derived from stored tickets, not live parsing
+
+---
+
+### 5.4 Customer Queue Daily Brief
+
+For a selected workspace, customer, and scope:
+
+- Summarize all open tickets
+- Include:
+  - Top risks
+  - Stale tickets
+  - Waiting on customer vs waiting on team
+  - **Diff since last brief**
+- Optional generation of draft customer updates
 
 Output modes:
+- Internal Ops
+- Technical
+- Executive
 
-Internal Ops, Technical, Exec
+Exports:
+- HTML and Markdown (POC)
+- PDF/DOCX (Phase 2)
 
-Export:
+**Acceptance Criteria**
+- One-click generation produces a preview and Artifact record
+- Diff section exists even in simplified POC form
 
-HTML / Markdown (POC), PDF/DOCX later
+---
 
-Acceptance: “Generate Daily Brief” produces a preview + export artifact entry.
+### 5.5 Meeting Prep Studio
 
-4.5 Meeting Prep Studio
+- List upcoming meetings
+- Generate prep briefs covering:
+  - Changes since last meeting
+  - Open loops
+  - Decisions required
+- Generate:
+  - Agenda draft
+  - Update email draft
+  - Post-meeting recap template
 
-Show upcoming meetings
+**Acceptance Criteria**
+- Prep generation produces an Artifact linked to evidence
 
-Generate prep brief:
+---
 
-changes since last meeting
+### 5.6 Promise Tracker
 
-open loops (tickets + promises per attendee)
+- Mine promises from Sent Items and replies
+- Track due dates and risk
+- Escalation reminders
+- Draft update emails using workspace identity
 
-decisions required
+**Acceptance Criteria**
+- Promises include evidence links
+- Promises can be converted to tasks
 
-Generate outputs:
+---
 
-agenda draft
+### 5.7 Accomplishments Generator
 
-customer update email
+- Generate quarterly/yearly summaries based on:
+  - Tickets touched/closed
+  - Artifacts delivered
+  - Promises kept
+  - Proactive issues identified
+  - Estimated hours saved
+- Output tones:
+  - Performance Review
+  - Executive Update
+  - Resume Bullets
 
-post-meeting recap template
+**Acceptance Criteria**
+- Output is review-ready with metrics
 
-Acceptance: One-click “Generate Prep Brief” creates a prep artifact and links evidence.
+---
 
-4.6 Promise Tracker
+### 5.8 Whiteglove Mode (Partner Delivery)
 
-Mine promises from Sent Items and outbound messages
+- Separate workspaces for Parex and ParkPlace
+- ParkPlace workspace uses ServiceNow ticket patterns
+- Branding, exports, and drafts reflect partner identity
+- No cross-workspace data mixing
 
-Track due dates and risk
+**Acceptance Criteria**
+- Theme lists are workspace-scoped
+- Guardrail banner clearly indicates active identity
 
-Reminders:
+---
 
-due soon, overdue, escalation schedule
+## 6. Governance and AI Safety
 
-Draft “promise update” emails with correct workspace branding
+### 6.1 Contract Registry
 
-Acceptance: Promise items include evidence links and can be converted to tasks.
+- Maintain a registry of function signatures and invariants
+- All AI-generated code changes must produce a contract diff
+- Breaking changes require explicit PM approval
 
-4.7 Accomplishments generator (quarter/year)
+---
 
-Generate review-ready bullet list with metrics:
+### 6.2 Policy Decisions
 
-tickets touched/closed
+Each detected contract change is classified as:
+- SAFE
+- RISKY
+- BREAKING
 
-artifacts delivered
+Resulting decisions:
+- APPROVE
+- DENY
+- APPROVE_WITH_CONDITIONS
 
-hours saved estimates (ROI)
+All decisions must be recorded as Policy Decision artifacts.
 
-risk reductions / customer outcomes
+---
 
-Output tones:
+## 7. Required UI Pages (POC)
 
-Performance Review, Exec Update, Resume bullets
+- Command Center
+- Customer Brief
+- Ticket Triage
+- Meeting Prep
+- Promise Tracker
+- Inbox Intelligence
+- Accomplishments
+- Settings (Workspace and Branding)
 
-Acceptance: Generates a structured “wins” section for the selected time window.
+---
 
-4.8 Whiteglove enforcement
+## 8. Safety and Trust Requirements
 
-Workspace isolation:
-
-separate ingestion config
-
-separate theme sets
-
-separate storage partition
-
-UI guardrail banner:
-
-“Whiteglove Mode” indicates ParkPlace identity and export branding
-
-Acceptance: No cross-workspace customer theme leakage; theme list is filtered by workspace.
-
-5) Quality attributes and guardrails
-
-Evidence-first: Every summary has clickable receipts (emails/threads).
-
-Auditability: AI outputs have confidence + “why” explanation.
-
-No side effects without approval: drafts only; user approves send.
-
-Performance: rules/folder allow-lists minimize noise processing.
-
-Security:
-
-protect secrets
-
-redact sensitive content in logs
-
-prompt injection defenses (retrieved email content treated as untrusted)
-
-6) POC UI pages (must exist)
-
-Command Center
-
-Customer Brief
-
-Ticket Triage
-
-Meeting Prep
-
-Promise Tracker
-
-Inbox Intel
-
-Accomplishments
-
-Settings (Workspace identity + branding controls)
+- Evidence-first summaries
+- Draft-only outputs (no auto-send)
+- Prompt-injection mitigation:
+  - Email content treated as untrusted data
+- Secrets redacted by default
+- Full audit trail for AI-assisted changes
